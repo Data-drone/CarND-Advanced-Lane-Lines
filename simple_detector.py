@@ -160,3 +160,20 @@ def weighted_img(img: np.ndarray, initial_img: np.ndarray, α:float=0.8, β:floa
     return cv2.addWeighted(initial_img, α, img, β, γ)
 
 
+def draw_pipeline(path: str) -> np.ndarray:
+    frame, fr_shape = read_video(path)
+    proc_f = grayscale(frame)
+    proc_f = gaussian_blur(proc_f, 5)
+    proc_f = canny(proc_f, 25, 150)
+    roi = region_of_interest(proc_f, np.array([[(0.1*fr_shape[1],fr_shape[0]),
+                          (fr_shape[1]*0.95, fr_shape[0]), 
+                          (0.55*fr_shape[1], 0.6*fr_shape[0]), 
+                          (0.45*fr_shape[1],0.6*fr_shape[0])]], dtype=np.int32))
+    proc_f_lines = hough_lines(roi, 2, np.pi/180, 16, 5, 50)
+    final_lines = find_lines(proc_f, proc_f_lines)
+    output_img = draw_lines(proc_f, final_lines)
+    output_img = weighted_img(output_img, frame)
+    #logger.debug('outputting: {0}'.format(type(frame)))
+    
+    #yield output_img
+    return output_img
