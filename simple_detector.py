@@ -84,55 +84,92 @@ def find_lines(img: np.ndarray, lines: list) -> list:
     l_x_mid, l_y_mid, r_x_mid, r_y_mid = 0,img.shape[0],img.shape[1],img.shape[0]
     l_grad, r_grad = -0.7,0.7 # default left and right gradients
 
+    output = []
     for line in lines:
         for x1,y1,x2,y2 in line:
             gradient = np.round(((y2-y1)/(x2-x1)), decimals = 2)
             length = np.round(np.sqrt(np.square(y2-y1) + np.square(x2-x1)), decimals = 2)
             
-            # right line
-            if np.absolute(gradient) > 0.55 and np.absolute(gradient) < 0.8:
-                if gradient > 0: 
-                    if x2 > r_x:
-                        r_x = x2
-                    if y2 > r_y:
-                        r_y = y2
-                    r_grad = gradient
+            # right line - examine this logic
+            if np.absolute(gradient) > 0.59 and np.absolute(gradient) < 0.8: 
+                output.append([x1,y1,x2,y2, gradient])
+                #if gradient > 0: 
+                    #if x2 > r_x:
+                    #    r_x = x2
+                    #if y2 > r_y:
+                    #    r_y = y2
+                #    r_grad = gradient
                     
-                    if x1 < r_x_mid:
-                        r_x_mid = x1
-                    if y1 < r_y_mid:
-                        r_y_mid = y1
+                    #if x1 < r_x_mid:
+                        
+                #    if y1 < r_y_mid:
+                #        r_y_mid = y1
+                #        r_x_mid = x1
                         
                 # left line
-                elif gradient < 0: 
+                #elif gradient < 0: 
                     # find bottum left corner
-                    if x1 < l_x:
-                        l_x = x1
-                    if y1 > l_y:
-                        l_y = y1
-                    l_grad = gradient
+                    #if x1 < l_x:
+                    #    l_x = x1
+                    #if y1 > l_y:
+                    #    l_y = y1
+                #    l_grad = gradient
                     
                     # find top right bit
-                    if x2 > l_x_mid:
-                        l_x_mid = x2
-                    if y2 < l_y_mid:
-                        l_y_mid = y2
+                    #if x2 > l_x_mid:
+                        
+                #    if y2 < l_y_mid:
+                #        l_y_mid = y2
+                #        l_x_mid = x2
 
-    if r_y < 0.95*img.shape[0]:
-        x_extrap = (img.shape[0]-r_y)/r_grad + r_x
-        r_x = int(x_extrap)
-        r_y = int(img.shape[0])
+    #if r_y < 0.95*img.shape[0]:
+    #    x_extrap = (img.shape[0]-r_y)/r_grad + r_x
+    #    r_x = int(x_extrap)
+    #    r_y = int(img.shape[0])
     
     # extra fill line
-    if l_y < 0.95*img.shape[0]:
-        l_x_extrap = (img.shape[0]-l_y)/l_grad + l_x # check
-        l_x = int(l_x_extrap)
-        l_y = int(img.shape[0])
+    #if l_y < 0.95*img.shape[0]:
+    #    l_x_extrap = (img.shape[0]-l_y)/l_grad + l_x # check
+    #    l_x = int(l_x_extrap)
+    #    l_y = int(img.shape[0])
 
     # output coordinary and gradient array
-    output = [[l_x, l_y, l_x_mid, l_y_mid], [r_x, r_y, r_x_mid, r_y_mid]]
+    #output = [[l_x, l_y, l_x_mid, l_y_mid], [r_x, r_y, r_x_mid, r_y_mid]]
 
     return output
+
+def find_points_for_transform(lines: list, img: np.ndarray) -> list:
+    """
+    we have a list of road lines and we need to find the corners to do a perspective transform
+    """
+
+    l_x1, l_y1, l_x2, l_y2 = 0, 0, 0, img.shape[1] 
+    r_x1, r_y1, r_x2, r_y2 = 0, 0, 0, img.shape[1]
+
+    for line in lines:
+        #for x1,y1,x2,y2 in line:
+        x1, y1, x2, y2, grad = line[0], line[1], line[2], line[3], line[4]
+            #grad = np.round(((y2-y1)/(x2-x1)), decimals = 2)
+            #left
+        if grad < 0:
+            if y1 > l_y1:
+                l_y1 = y1
+                l_x1 = x1
+            if y2 < l_y2:
+                l_y2 = y2
+                l_x2 = x2
+            
+            # right
+        elif grad > 0:
+            if y1 > r_y1:
+                r_y1 = y1
+                r_x1 = x1
+            if y2 < r_y2:
+                r_y2 = y2
+                r_x2 = x2
+        
+    return [[l_x1, l_y1, l_x2, l_y2], [r_x1, r_y1, r_x2, r_y2]]
+
 
 def hough_lines(img: np.ndarray, rho: int, theta: int, threshold: int, min_line_len: int, max_line_grap: int) -> list:
     """
@@ -142,14 +179,20 @@ def hough_lines(img: np.ndarray, rho: int, theta: int, threshold: int, min_line_
 
     return lines
 
-def draw_lines(img: np.ndarray, lines: list, color: list = [255,0,0], thickness: int=2) -> np.ndarray:
+def draw_lines(img: np.ndarray, lines: list, color: list = [255,0,0], 
+                thickness: int=5, margin: int = 0) -> np.ndarray:
     """
     receive lines then draw them
     lines is of format [x1,y1,x2,y2]
+    margin is to move the lines slightly out of the lane
     """
     line_img = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.uint8)
+
     for line in lines:
-        cv2.line(line_img, (line[0], line[1]), (line[2], line[3]), color, thickness)
+        if line[4] > 0:
+            cv2.line(line_img, (line[0]+margin, line[1]), (line[2]+margin, line[3]), color, thickness)
+        elif line[4] < 0:
+            cv2.line(line_img, (line[0]-margin, line[1]), (line[2]-margin, line[3]), color, thickness)            
     
     return line_img
 
