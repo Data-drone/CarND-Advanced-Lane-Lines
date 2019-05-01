@@ -37,11 +37,6 @@ for i in range(0, test_length):
     img, size = read_video(test_set[i])
     result = undistort_img(img, process_cam.objpoints, process_cam.imgpoints)    
     
-    #plt.subplot(test_length*2,2,i*2+1)
-    #plt.imshow(img, interpolation='none')
-    #plt.subplot(test_length*2,2,i*2+2)
-    #plt.imshow(result, interpolation='none')
-    
     # name
     output_name = 'undist_' + img_name
     savepath = os.path.join('output_images', output_name)

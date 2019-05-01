@@ -19,16 +19,13 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image1]: ./examples/undistort_output.png "Undistorted"
-[image2]: ./test_images/test1.jpg "Road Transformed"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
-[image4]: ./examples/warped_straight_lines.jpg "Warp Example"
-[image5]: ./examples/color_fit_lines.jpg "Fit Visual"
-[image6]: ./examples/example_output.jpg "Output"
-[video1]: ./project_video.mp4 "Video"
-
 [image_test_1]: ./test_images/test1.jpg "Before Undistory"
 [image_undist_test_1]: ./output_images/undist_test1.jpg "Before Undistory"
+[image_filter_test_1]: ./output_images/filteredtest1.jpg "After Filter"
+[image_prewarp]: ./output_images/prewarp.jpg "Before Warp"
+[image_postwarp]: ./output_images/postwarp.jpg "After Warp"
+[image_done]: ./output_images/final_test1.jpg "final output"
+[final]: ./project_processed_video.mp4 "Video"
 
 
 ### Camera Calibration
@@ -37,81 +34,81 @@ The goals / steps of this project are the following:
 
 The code to compute the camera matrix and distortion coefficients is run in `advanced_detector.py` There is a `calibrate_cam` function as part of the `CameraPipeline` class. This runs the `genpoints` function which is in lines 10 to 31. It is run in the Calibration Image section of the IPython notebook `Build Advanced Detector.ipynb`
 
-The output images were created using `calibrate_demo.py`
-
-![alt text][image_test_1]
-![alt text][image_undist_test_1]
-
-
-
-# Break
-
-The code for this step is contained in the first code cell of the IPython notebook located in "./examples/example.ipynb" (or in lines # through # of the file called `some_file.py`).  
-
-I start by preparing "object points", which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  Thus, `objp` is just a replicated array of coordinates, and `objpoints` will be appended with a copy of it every time I successfully detect all chessboard corners in a test image.  `imgpoints` will be appended with the (x, y) pixel position of each of the corners in the image plane with each successful chessboard detection.  
-
-I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.  I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
-
-![alt text][image1]
-
-### Pipeline (single images)
+The output images were created using `calibrate_demo.py`. genpoints works by taking an image in a preset (x,y) grid then using `cv2.findChessboardCorners` to output a tuple containing a list of object points and image points respectively. These are used by the `cv2.CalibrateCamera` in the `undistort_img` function. 
 
 #### 1. Provide an example of a distortion-corrected image.
 
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
+Raw Image
+![alt text][image_test_1]
+
+Undistorted Image
+![alt text][image_undist_test_1]
+
+
+### Pipeline (single images)
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+After the undistort step, I take the red channel of the image and after a HLS conversion, the S channel and threshold them to try and extract the lines more clearly. For R channel, I use threshold 215 to 255
+and for S channel I use 90 to 255. These are then merged together. 
 
-![alt text][image3]
+The filtering code is in lines 243 to 256 in the `advanced_detector.py` file. An example output is
+
+![alt text][image_filter_test_1]
+
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
+The perspective transform is hardcoded with surface and destination points as follows:
 
 ```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
+persp_src = np.float32(
+    [[445, 150], 
+     [760, 150], 
+     [150,300], 
+     [1100,300]]
+    )
+dest_src = np.float32(
+    [[190, 150], 
+     [1055, 150], 
+     [150,300], 
+     [1100,300]]
+    )
+
 ```
 
-This resulted in the following source and destination points:
+This is run through the `cv2.getPerspectiveTransform` function with the transformation matrix being used in a Linear Intepolation via `cv2.warpPerspective` with a cropped version of the whole frame. The crop was chosen to focus on just the road surface to minimise clutter for the lane pixel detection step.
 
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
+The test of the perspective transform is in the workbook `Build_Advanced_Detector.ipynb` with an example being
 
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-![alt text][image4]
+PreWarp Image
+![alt text][image_prewarp]
+
+PostWarp Image
+![alt text][image_postwarp]
+
+
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+To identify the lines, I fit a polynormal to the line pixels identified. This process is defined in the `find_lane_pixels function` in `advanced_detector.py` file. The lane pixel identifier uses 9 sliding windows looks for non-zero pixels within each window. 
 
-![alt text][image5]
+A second degree polynomial is fitted to the identified pixels via the `fit_polynomial` function in `advanced_detector.py` 
+
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+The radius of curvature is calculated in the `measure_curvature_pixels` function in the `advanced_detector.py`. It uses the functions as explained in Measuring Curvature I video.
+
+The position of the vehicle with respect to the center, the bias, is calculated in the `calc_bias` function. This is calculated by looking at the distance of the left line from the middle of the image, the distance from the right line and hence working out the offset.
+
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+I implemented this step in lines 398 through 407 in my code in `advanced_detector.py` in the function `process_image()`.  Here is an example of my result on a test image:
 
-![alt text][image6]
+![alt text][image_done]
 
 ---
 
@@ -119,7 +116,7 @@ I implemented this step in lines # through # in my code in `yet_another_file.py`
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](./project_processed_video.mp4)
 
 ---
 
@@ -127,4 +124,8 @@ Here's a [link to my video result](./project_video.mp4)
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+Currently, the pipeline recalculates the line fitting with each frame and doesn't take into account previous frame data to make this more efficient and less noisy but it seems to work good enough for now.
+
+In the advanced video, there are scenes where one line is missing. Ideally the algorithm should have a concept of how far road lines are apart and be able to through a combination of using prior knowledge and knowing rough lane widths be able to work out where the other line would be should only one line appear in the video.
+
+The perspective transform has been hardcoded rather than being dynamic so in areas when the perspective changes due to undulating curves in the road, the warp won't result in a good candidate for lane detection.
