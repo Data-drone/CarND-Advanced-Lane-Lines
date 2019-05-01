@@ -385,8 +385,11 @@ class CameraPipeline(object):
         return full_output
 
     def process_image(self, img: str):
+        
+        # add the undistort in
+        undist = undistort_img(img, self.objpoints, self.imgpoints)
 
-        output, background, bias, left_curve, right_curve = run_image_algo(img, 0.05, self.M, self.Minv)
+        output, background, bias, left_curve, right_curve = run_image_algo(undist, 0.05, self.M, self.Minv)
 
         fontScale = 1
         fontColor = (255,255,255)
