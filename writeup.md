@@ -52,9 +52,7 @@ Undistorted Image
 After the undistort step, I take the red channel of the image and after a HLS conversion, the S channel and threshold them to try and extract the lines more clearly. For R channel, I use threshold 215 to 255
 and for S channel I use 90 to 255. These are then merged together. 
 
-The filtering code is in lines 243 to 256 in the `advanced_detector.py` file. An example output is
-
-![alt text][image_filter_test_1]
+The filtering code is in lines 243 to 256 in the `advanced_detector.py` file. See the Filter cell of `Build_Advanced_Detector.ipynb` to see the end result. (unable to save out image for some reason)
 
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
@@ -106,9 +104,7 @@ The position of the vehicle with respect to the center, the bias, is calculated 
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in lines 398 through 407 in my code in `advanced_detector.py` in the function `process_image()`.  Here is an example of my result on a test image:
-
-![alt text][image_done]
+I implemented this step in lines 398 through 407 in my code in `advanced_detector.py` in the function `process_image()`.  See the Run on Test cell of `Build_Advanced_Detector.ipynb` to see the end result. (unable to save out image for some reason)
 
 ---
 
