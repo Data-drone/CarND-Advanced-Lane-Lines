@@ -350,7 +350,7 @@ class CameraPipeline(object):
         self.M = cv2.getPerspectiveTransform(self.persp_src, self.dest_src)
         self.Minv = cv2.getPerspectiveTransform(self.dest_src, self.persp_src)
 
-        self.search_margin = 0.05
+        self.crop_image_margin = 0.05
 
     def calibrate_cam(self, cal_images: str):
         self.objpoints, self.imgpoints = genpoints(cal_images, self.nx, self.ny)
@@ -359,7 +359,7 @@ class CameraPipeline(object):
         output = adv_pipeline(img, self.objpoints, self.imgpoints)
         return output
 
-    def _run_pipeline(self, fil_path: str, margin: float, transform: list, inv_transform: list ):
+    def _run_pipeline(self, fil_path: str, crop_margin: float, transform: list, inv_transform: list ):
 
         frame, fr_shape = read_video(fil_path)
 
@@ -369,10 +369,10 @@ class CameraPipeline(object):
         # should have done in a mask?
         # simplistic selection of just the road section in front of the car
         car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
-                                        int(fr_shape[1]*margin):int(fr_shape[1]*(1-margin)) ]
+                                        int(fr_shape[1]*crop_margin):int(fr_shape[1]*(1-crop_margin)) ]
 
         warped_shape = car_forward_region.shape 
-        warped = cv2.warpPerspective(car_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
+        warped = cv2.warpPerspective(car_forward_region, transform, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
         
         # returns the polynomial fit
         left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped)
@@ -383,9 +383,9 @@ class CameraPipeline(object):
         
         # plot the lines and section on warped colour section
         img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
-                                        int(fr_shape[1]*margin):int(fr_shape[1]*(1-margin)) ] 
+                                        int(fr_shape[1]*crop_margin):int(fr_shape[1]*(1-crop_margin)) ] 
         
-        warp_img = cv2.warpPerspective(img_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
+        warp_img = cv2.warpPerspective(img_forward_region, transform, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
 
         cv2_poly_points = plot_points(left_points, right_points, pointsy)
 
@@ -393,15 +393,15 @@ class CameraPipeline(object):
         
         filled = cv2.fillPoly(image_set, np.int32([cv2_poly_points]),(10, 255, 0))
 
-        inv_warp = cv2.warpPerspective(filled, inv_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
+        un_warp = cv2.warpPerspective(filled, inv_transform, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
 
-        inv_warp_large = cv2.copyMakeBorder(inv_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*margin),
-                                            int(fr_shape[1]*margin), cv2.BORDER_CONSTANT, 0)
+        inv_warp_large = cv2.copyMakeBorder(un_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*crop_margin),
+                                            int(fr_shape[1]*crop_margin), cv2.BORDER_CONSTANT, 0)
 
         return inv_warp_large, frame, bias, left_curverad, right_curverad
 
     def process(self, img: str):
-        output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.search_margin, self.M, self.Minv)
+        output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.crop_image_margin, self.M, self.Minv)
 
         fontScale = 1
         fontColor = (255,255,255)
