@@ -234,59 +234,6 @@ def measure_curvature_pixels(warped_img, left_fit, right_fit):
     
     return left_curverad, right_curverad
 
-# frame by frame ago
-def run_image_algo(frame, side_margin, bird_eye_warp, inv_warp):
-
-    fr_shape = frame.shape
-
-    # create the colour channel image
-    R = frame[:,:, 0]
-    hls = cv2.cvtColor(frame, cv2.COLOR_RGB2HLS)
-    S = hls[:,:,2]
-    
-    thresh = (215, 255)
-    binary = np.zeros_like(R)
-    binary[(R > thresh[0]) & (R <= thresh[1])] = 1
-    
-    thresh = (90, 255)
-    binary_2 = np.zeros_like(S)
-    binary_2[(S > thresh[0]) & (S <= thresh[1])] = 1
-    
-    merg = np.zeros_like(S)
-    merg[(binary == 1) | (binary_2 == 1)]=1
-
-    # should have done in a mask?
-    car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
-                                    int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ]
-
-    warped_shape = car_forward_region.shape 
-    warped = cv2.warpPerspective(car_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
-    
-    left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped)
-    
-    left_curverad, right_curverad = measure_curvature_pixels(warped, left_ft, right_ft)
-
-    bias = calc_bias(warped, left_points, right_points)
-    
-    # plot the lines and section on warped colour section
-    img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
-                                    int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ] 
-    
-    warp_img = cv2.warpPerspective(img_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
-
-    cv2_poly_points = plot_points(left_points, right_points, pointsy)
-
-    image_set = np.zeros_like(warp_img)
-    
-    filled = cv2.fillPoly(image_set, np.int32([cv2_poly_points]),(10, 255, 0))
-
-    inv_warp = cv2.warpPerspective(filled, inv_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
-
-    inv_warp_large = cv2.copyMakeBorder(inv_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*side_margin),
-                                        int(fr_shape[1]*side_margin), cv2.BORDER_CONSTANT, 0)
-
-    return inv_warp_large, frame, bias, left_curverad, right_curverad
-
 
 # convert this to run on a frame in 
 def run_line_algo(fil_path, side_margin, bird_eye_warp, inv_warp):
@@ -367,29 +314,6 @@ class CameraPipeline(object):
 
     def process(self, img: str):
         output, background, bias, left_curve, right_curve = run_line_algo(img, 0.05, self.M, self.Minv)
-
-        fontScale = 1
-        fontColor = (255,255,255)
-        lineType = 2
-        
-        cv2.putText(background, 'bias: {0}m'.format(np.round(bias, 2)), (100,100), cv2.FONT_HERSHEY_SIMPLEX,
-                         fontScale, fontColor, lineType )
-
-        cv2.putText(background, 'left curve: {0}m'.format(np.round(left_curve, 2)), (100,200), cv2.FONT_HERSHEY_SIMPLEX,
-                         fontScale, fontColor, lineType )
-        cv2.putText(background, 'right curve: {0}m'.format(np.round(right_curve, 2)), (100,300), cv2.FONT_HERSHEY_SIMPLEX,
-                         fontScale, fontColor, lineType )
-        
-
-        full_output = weighted_img(output, background) #, α=0.01, β=1)
-        return full_output
-
-    def process_image(self, img: str):
-        
-        # add the undistort in
-        undist = undistort_img(img, self.objpoints, self.imgpoints)
-
-        output, background, bias, left_curve, right_curve = run_image_algo(undist, 0.05, self.M, self.Minv)
 
         fontScale = 1
         fontColor = (255,255,255)
