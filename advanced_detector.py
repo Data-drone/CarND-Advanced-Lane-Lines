@@ -234,14 +234,16 @@ def measure_curvature_pixels(warped_img, left_fit, right_fit):
     
     return left_curverad, right_curverad
 
+def filter_image(frame):
+    """
 
-# convert this to run on a frame in 
-def run_line_algo(fil_path, side_margin, bird_eye_warp, inv_warp):
+    read an image and apply the filtering needed to create an image to feed into the lane detector
 
-    frame, fr_shape = read_video(fil_path)
-    
+    """
+
     # create the colour channel image
     R = frame[:,:, 0]
+
     hls = cv2.cvtColor(frame, cv2.COLOR_RGB2HLS)
     S = hls[:,:,2]
     
@@ -255,6 +257,16 @@ def run_line_algo(fil_path, side_margin, bird_eye_warp, inv_warp):
     
     merg = np.zeros_like(S)
     merg[(binary == 1) | (binary_2 == 1)]=1
+
+    return merg 
+
+
+# convert this to run on a frame in 
+def run_line_algo(fil_path, side_margin, bird_eye_warp, inv_warp):
+
+    frame, fr_shape = read_video(fil_path)
+    
+    merg = filter_image(frame)
 
     # should have done in a mask?
     car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
