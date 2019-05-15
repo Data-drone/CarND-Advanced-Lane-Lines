@@ -369,7 +369,7 @@ class CameraPipeline(object):
         # should have done in a mask?
         # simplistic selection of just the road section in front of the car
         car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
-                                        int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ]
+                                        int(fr_shape[1]*margin):int(fr_shape[1]*(1-margin)) ]
 
         warped_shape = car_forward_region.shape 
         warped = cv2.warpPerspective(car_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
@@ -383,7 +383,7 @@ class CameraPipeline(object):
         
         # plot the lines and section on warped colour section
         img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
-                                        int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ] 
+                                        int(fr_shape[1]*margin):int(fr_shape[1]*(1-margin)) ] 
         
         warp_img = cv2.warpPerspective(img_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
 
@@ -395,8 +395,8 @@ class CameraPipeline(object):
 
         inv_warp = cv2.warpPerspective(filled, inv_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
 
-        inv_warp_large = cv2.copyMakeBorder(inv_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*side_margin),
-                                            int(fr_shape[1]*side_margin), cv2.BORDER_CONSTANT, 0)
+        inv_warp_large = cv2.copyMakeBorder(inv_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*margin),
+                                            int(fr_shape[1]*margin), cv2.BORDER_CONSTANT, 0)
 
         return inv_warp_large, frame, bias, left_curverad, right_curverad
 
