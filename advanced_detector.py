@@ -164,11 +164,29 @@ def find_lane_pixels(binary_warped):
     return leftx, lefty, rightx, righty, out_img
 
 
-def fit_polynomial(binary_warped):
+def fit_poly(img_shape, leftx, lefty, rightx, righty):
     """
+
+    """
+    ### TO-DO: Fit a second order polynomial to each with np.polyfit() ###
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+    # Generate x and y values for plotting
+    ploty = np.linspace(0, img_shape[0]-1, img_shape[0])
+    ### TO-DO: Calc both polynomials using ploty, left_fit and right_fit ###
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+
+def fit_polynomial(binary_warped: np.ndarray):
+    """
+
+    binary_warped: a perspective shifted image to run the line detector on
+
     reads in the image and works out the left and right lines
     """
-    # Find our lane pixels first
+    
+    # Find our lane pixels first from the image
     leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped)
 
     # Fit a second order polynomial to each using `np.polyfit`
@@ -332,6 +350,8 @@ class CameraPipeline(object):
         self.M = cv2.getPerspectiveTransform(self.persp_src, self.dest_src)
         self.Minv = cv2.getPerspectiveTransform(self.dest_src, self.persp_src)
 
+        self.search_margin = 0.05
+
     def calibrate_cam(self, cal_images: str):
         self.objpoints, self.imgpoints = genpoints(cal_images, self.nx, self.ny)
 
@@ -339,8 +359,49 @@ class CameraPipeline(object):
         output = adv_pipeline(img, self.objpoints, self.imgpoints)
         return output
 
+    def _run_pipeline(self, img: str, margin: float, transform: list, inv_transform: list ):
+
+        frame, fr_shape = read_video(fil_path)
+
+        # apply filter
+        merg = filter_image(frame)
+
+        # should have done in a mask?
+        # simplistic selection of just the road section in front of the car
+        car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
+                                        int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ]
+
+        warped_shape = car_forward_region.shape 
+        warped = cv2.warpPerspective(car_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
+        
+        # returns the polynomial fit
+        left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped)
+        
+        left_curverad, right_curverad = measure_curvature_pixels(warped, left_ft, right_ft)
+
+        bias = calc_bias(warped, left_points, right_points)
+        
+        # plot the lines and section on warped colour section
+        img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
+                                        int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ] 
+        
+        warp_img = cv2.warpPerspective(img_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
+
+        cv2_poly_points = plot_points(left_points, right_points, pointsy)
+
+        image_set = np.zeros_like(warp_img)
+        
+        filled = cv2.fillPoly(image_set, np.int32([cv2_poly_points]),(10, 255, 0))
+
+        inv_warp = cv2.warpPerspective(filled, inv_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
+
+        inv_warp_large = cv2.copyMakeBorder(inv_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*side_margin),
+                                            int(fr_shape[1]*side_margin), cv2.BORDER_CONSTANT, 0)
+
+        return inv_warp_large, frame, bias, left_curverad, right_curverad
+
     def process(self, img: str):
-        output, background, bias, left_curve, right_curve = run_line_algo(img, 0.05, self.M, self.Minv)
+        output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.search_margin, self.M, self.Minv)
 
         fontScale = 1
         fontColor = (255,255,255)
