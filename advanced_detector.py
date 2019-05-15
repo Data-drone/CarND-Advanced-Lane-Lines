@@ -359,7 +359,7 @@ class CameraPipeline(object):
         output = adv_pipeline(img, self.objpoints, self.imgpoints)
         return output
 
-    def _run_pipeline(self, img: str, margin: float, transform: list, inv_transform: list ):
+    def _run_pipeline(self, fil_path: str, margin: float, transform: list, inv_transform: list ):
 
         frame, fr_shape = read_video(fil_path)
 
