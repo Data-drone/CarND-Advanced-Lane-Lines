@@ -221,7 +221,13 @@ def plot_points(left_fit_pts, right_fit_pts, ploty):
     
     return result
 
-def measure_curvature_pixels(warped_img, left_fit, right_fit):
+def measure_curvature_pixels(warped_img: np.array, left_fit, right_fit):
+    """
+
+    measures the curvature of the road
+    takes in a warped image and the left and right fits
+
+    """
     
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30/720 # meters per pixel in y dimension
@@ -262,19 +268,28 @@ def filter_image(frame):
 
 
 # convert this to run on a frame in 
-def run_line_algo(fil_path, side_margin, bird_eye_warp, inv_warp):
+def run_line_algo(fil_path: str, side_margin: int, bird_eye_warp: list, inv_warp: list):
+    """
+
+    run the full lane detection algorithm
+    runs filter then 
+
+    """
 
     frame, fr_shape = read_video(fil_path)
     
+    # apply filter
     merg = filter_image(frame)
 
     # should have done in a mask?
+    # simplistic selection of just the road section in front of the car
     car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
                                     int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ]
 
     warped_shape = car_forward_region.shape 
     warped = cv2.warpPerspective(car_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
     
+    # returns the polynomial fit
     left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped)
     
     left_curverad, right_curverad = measure_curvature_pixels(warped, left_ft, right_ft)
