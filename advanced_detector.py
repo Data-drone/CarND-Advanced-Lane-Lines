@@ -184,6 +184,8 @@ def fit_polynomial(binary_warped: np.ndarray):
     binary_warped: a perspective shifted image to run the line detector on
 
     reads in the image and works out the left and right lines
+
+    returns left_fit and right_fit lines and the fitted coordinates
     """
     
     # Find our lane pixels first from the image
@@ -217,9 +219,10 @@ def fit_polynomial(binary_warped: np.ndarray):
 
 def calc_bias(img, left_fit_pts, right_fit_pts):
     middle = img.shape[1]/2
-    left_dist = (middle - left_fit_pts)
-    right_dist = (right_fit_pts - middle)
-    bias = ((left_dist - right_dist)*(3.7/700))[0]
+
+    lane_middle = (right_fit_pts - left_fit_pts)/2 + left_fit_pts
+    unscaled_bias = lane_middle - middle
+    bias = ((unscaled_bias)*(3.7/700))[0]
 
     return bias
 
@@ -239,24 +242,26 @@ def plot_points(left_fit_pts, right_fit_pts, ploty):
     
     return result
 
-def measure_curvature_pixels(warped_img: np.array, left_fit, right_fit):
-    """
 
-    measures the curvature of the road
-    takes in a warped image and the left and right fits
+def abs_sobel_thresh(img, orient='x', thresh_min=0, thresh_max=255):
+    # Convert to grayscale
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    # Apply x or y gradient with the OpenCV Sobel() function
+    # and take the absolute value
+    if orient == 'x':
+        abs_sobel = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
+    if orient == 'y':
+        abs_sobel = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
+    # Rescale back to 8 bit integer
+    scaled_sobel = np.uint8(255*abs_sobel/np.max(abs_sobel))
+    # Create a copy and apply the threshold
+    binary_output = np.zeros_like(scaled_sobel)
+    # Here I'm using inclusive (>=, <=) thresholds, but exclusive is ok too
+    binary_output[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 1
 
-    """
-    
-    # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/700 # meters per pixel in x dimension
-    
-    y_eval = np.max(warped_img)
-    
-    left_curverad = ((1 + (2*left_fit[0]*y_eval*ym_per_pix + left_fit[1])**2)**1.5) / np.absolute(2*left_fit[0])
-    right_curverad = ((1 + (2*right_fit[0]*y_eval*ym_per_pix + right_fit[1])**2)**1.5) / np.absolute(2*right_fit[0])
-    
-    return left_curverad, right_curverad
+    # Return the result
+    return binary_output
+
 
 def filter_image(frame):
     """
@@ -270,6 +275,17 @@ def filter_image(frame):
 
     hls = cv2.cvtColor(frame, cv2.COLOR_RGB2HLS)
     S = hls[:,:,2]
+
+    hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+    V = hsv[:,:,2]
+
+    thresh_array = np.array([[0, 70, 70], [50,255,255]])
+    binary_v = np.zeros_like(R)
+    binary_v[(hsv[:,:,0] > thresh_array[0][0]) & (hsv[:,:,0] <= thresh_array[1][0])
+            & (hsv[:,:,1] > thresh_array[0][1]) & (hsv[:,:,1] <= thresh_array[1][1])
+            & (hsv[:,:,2] > thresh_array[0][2]) & (hsv[:,:,2] <= thresh_array[1][2])] = 1
+    
+    binary_sobel_x = abs_sobel_thresh(frame, orient='x', thresh_min = 20, thresh_max=100)
     
     thresh = (215, 255)
     binary = np.zeros_like(R)
@@ -280,9 +296,40 @@ def filter_image(frame):
     binary_2[(S > thresh[0]) & (S <= thresh[1])] = 1
     
     merg = np.zeros_like(S)
-    merg[(binary == 1) | (binary_2 == 1)]=1
+    merg[(binary == 1) | (binary_2 == 1) | (binary_v == 1 ) | (binary_sobel_x == 1 ) ]=1
 
     return merg 
+
+
+def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_fit: np.ndarray):
+    """
+
+    measures the curvature of the road
+    takes in a warped image and the left and right fits
+
+    """
+
+    y_coords = np.linspace(0, warped_img.shape[0]-1, warped_img.shape[0])
+    left_x_coords = left_fit[0]*y_coords**2 + left_fit[1]*y_coords + left_fit[2]
+    right_x_coords = right_fit[0]*y_coords**2 + right_fit[1]*y_coords + right_fit[2]
+
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+    
+    y_eval = np.max(y_coords)
+
+    rescaled_y = y_coords*ym_per_pix
+    rescaled_x_left = left_x_coords*xm_per_pix
+    rescaled_x_right = right_x_coords*xm_per_pix
+     
+    left_fit_sc = np.polyfit(rescaled_y, rescaled_x_left, 2)
+    right_fit_sc = np.polyfit(rescaled_y, rescaled_x_right, 2)
+
+    left_curverad = ((1 + (2*left_fit_sc[0]*y_eval + left_fit_sc[1])**2)**1.5) / np.absolute(2*left_fit_sc[0])
+    right_curverad = ((1 + (2*right_fit_sc[0]*y_eval + right_fit_sc[1])**2)**1.5) / np.absolute(2*right_fit_sc[0])
+    
+    return left_curverad, right_curverad
 
 
 # convert this to run on a frame in 
@@ -352,6 +399,9 @@ class CameraPipeline(object):
 
         self.crop_image_margin = 0.05
 
+        self.left_lane = None
+        self.right_lane = None
+
     def calibrate_cam(self, cal_images: str):
         self.objpoints, self.imgpoints = genpoints(cal_images, self.nx, self.ny)
 
@@ -359,9 +409,9 @@ class CameraPipeline(object):
         output = adv_pipeline(img, self.objpoints, self.imgpoints)
         return output
 
-    def _run_pipeline(self, fil_path: str, crop_margin: float, transform: list, inv_transform: list ):
+    def _run_pipeline(self, frame: np.ndarray, crop_margin: float, transform: list, inv_transform: list ):
 
-        frame, fr_shape = read_video(fil_path)
+        fr_shape = frame.shape
 
         # apply filter
         merg = filter_image(frame)
@@ -400,16 +450,39 @@ class CameraPipeline(object):
 
         return inv_warp_large, frame, bias, left_curverad, right_curverad
 
-    def process(self, img: str):
-        output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.crop_image_margin, self.M, self.Minv)
+    def _run_video_pipeline(self, fil_path: str, crop_margin: float, transform: list, inv_transform: list ):
+
+        frame, fr_shape = read_video(fil_path)
+
+        inv_warp_large, frame, bias, left_curverad, right_curverad = self._run_pipeline(frame, crop_margin, transform, inv_transform)
+
+        return inv_warp_large, frame, bias, left_curverad, right_curverad
+
+
+    def process(self, img):
+
+        """
+
+        processes input with the pipeline
+        if img is a string it opens it like a video path otherwise it expects an image array
+
+        returns processed frames 
+
+        """
+
+        if type(img) is str:
+            output, background, bias, left_curve, right_curve = self._run_video_pipeline(img, self.crop_image_margin, self.M, self.Minv)
+        elif type(img) is np.ndarray:
+            output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.crop_image_margin, self.M, self.Minv)
+            
+
 
         fontScale = 1
         fontColor = (255,255,255)
         lineType = 2
         
-        cv2.putText(background, 'bias: {0}m'.format(np.round(bias, 2)), (100,100), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(background, 'bias (-ve is right drift): {0}m'.format(np.round(bias, 2)), (100,100), cv2.FONT_HERSHEY_SIMPLEX,
                          fontScale, fontColor, lineType )
-
         cv2.putText(background, 'left curve: {0}m'.format(np.round(left_curve, 2)), (100,200), cv2.FONT_HERSHEY_SIMPLEX,
                          fontScale, fontColor, lineType )
         cv2.putText(background, 'right curve: {0}m'.format(np.round(right_curve, 2)), (100,300), cv2.FONT_HERSHEY_SIMPLEX,
