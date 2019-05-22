@@ -203,15 +203,21 @@ def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: n
     else:
         leftx, lefty, rightx, righty, out_img = search_around_poly(binary_warped, left_fit, right_fit)
 
+    # empty result can be an issue due to filtering hence the try except
     # Fit a second order polynomial to each using `np.polyfit`
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
+    
+    left_fi = np.polyfit(lefty, leftx, 2)
+    right_fi = np.polyfit(righty, rightx, 2)
 
+    assert left_fi is not None
+    assert right_fi is not None
+    
+    
     # Generate x and y values for plotting
     ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
     try:
-        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+        left_fitx = left_fi[0]*ploty**2 + left_fi[1]*ploty + left_fi[2]
+        right_fitx = right_fi[0]*ploty**2 + right_fi[1]*ploty + right_fi[2]
     except TypeError:
         # Avoids an error if `left` and `right_fit` are still none or incorrect
         print('The function failed to fit a line!')
@@ -227,7 +233,7 @@ def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: n
     #plt.plot(left_fitx, ploty, color='yellow')
     #plt.plot(right_fitx, ploty, color='yellow')
 
-    return left_fit, right_fit, left_fitx, right_fitx, ploty
+    return left_fi, right_fi, left_fitx, right_fitx, ploty
 
 
 def calc_bias(img, left_fit_pts, right_fit_pts):
@@ -272,43 +278,28 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
     return binary_output
 
 
+def color_filter(image: np.ndarray, lower: np.ndarray, upper: np.ndarray, colourspace = None) -> np.ndarray:
 
-def filter_image(frame):
-    """
+    if colourspace is not None:
+        col_image = cv2.cvtColor(image, colourspace)
+    else:
+        col_image = image
+    binary = cv2.inRange(col_image, lower, upper)
 
-    read an image and apply the filtering needed to create an image to feed into the lane detector
+    return binary
 
-    """
+def filter_image(frame: np.ndarray) -> np.ndarray:
 
-    # create the colour channel image
-    R = frame[:,:, 0]
+    White_filter = color_filter(image = frame, lower = np.array([202,202,202]), upper = np.array([255,255,255]) )
+    Yellow_filter = color_filter(image = frame, lower = np.array([200,120,0]), upper = np.array([255,255, 100]) )
 
-    hls = cv2.cvtColor(frame, cv2.COLOR_RGB2HLS)
-    S = hls[:,:,2]
+    #Red_filter = color_filter(image = frame, lower = np.array([215, 0, 0]), upper = np.array([255, 0, 0]) )
+    #HLS_filter = color_filter(image = frame, lower = np.array([0, 0, 90]), upper = np.array([0, 0, 255]), colourspace = cv2.COLOR_RGB2HLS )
 
-    hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
-    V = hsv[:,:,2]
+    merged_binary = np.zeros_like(White_filter)
+    merged_binary[(White_filter >= 1) | (Yellow_filter >= 1)]=1 #| (binary_v == 1 ) & (sobel_grad == 1 ) ]=1
 
-    thresh_array = np.array([[0, 70, 70], [50,255,255]])
-    binary_v = np.zeros_like(R)
-    binary_v[(hsv[:,:,0] > thresh_array[0][0]) & (hsv[:,:,0] <= thresh_array[1][0])
-            & (hsv[:,:,1] > thresh_array[0][1]) & (hsv[:,:,1] <= thresh_array[1][1])
-            & (hsv[:,:,2] > thresh_array[0][2]) & (hsv[:,:,2] <= thresh_array[1][2])] = 1
-    
-    sobel_grad = dir_threshold(frame, sobel_kernel=15, thresh=(0.7, 1.3))
-    
-    thresh = (215, 255)
-    binary = np.zeros_like(R)
-    binary[(R > thresh[0]) & (R <= thresh[1])] = 1
-    
-    thresh = (90, 255)
-    binary_2 = np.zeros_like(S)
-    binary_2[(S > thresh[0]) & (S <= thresh[1])] = 1
-    
-    merg = np.zeros_like(S)
-    merg[(binary == 1) | (binary_2 == 1)]=1 #| (binary_v == 1 ) & (sobel_grad == 1 ) ]=1
-
-    return merg 
+    return merged_binary
 
 
 def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_fit: np.ndarray):
@@ -318,6 +309,9 @@ def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_f
     takes in a warped image and the left and right fits
 
     """
+
+    assert left_fit is not None
+    assert right_fit is not None
 
     y_coords = np.linspace(0, warped_img.shape[0]-1, warped_img.shape[0])
     left_x_coords = left_fit[0]*y_coords**2 + left_fit[1]*y_coords + left_fit[2]
