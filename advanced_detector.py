@@ -331,55 +331,6 @@ def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_f
     
     return left_curverad, right_curverad
 
-
-# convert this to run on a frame in 
-def run_line_algo(fil_path: str, side_margin: int, bird_eye_warp: list, inv_warp: list):
-    """
-
-    run the full lane detection algorithm
-    runs filter then 
-
-    """
-
-    frame, fr_shape = read_video(fil_path)
-    
-    # apply filter
-    merg = filter_image(frame)
-
-    # should have done in a mask?
-    # simplistic selection of just the road section in front of the car
-    car_forward_region = merg[int(fr_shape[0]/2):fr_shape[0],
-                                    int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ]
-
-    warped_shape = car_forward_region.shape 
-    warped = cv2.warpPerspective(car_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
-    
-    # returns the polynomial fit
-    left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped)
-    
-    left_curverad, right_curverad = measure_curvature_pixels(warped, left_ft, right_ft)
-
-    bias = calc_bias(warped, left_points, right_points)
-    
-    # plot the lines and section on warped colour section
-    img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
-                                    int(fr_shape[1]*side_margin):int(fr_shape[1]*(1-side_margin)) ] 
-    
-    warp_img = cv2.warpPerspective(img_forward_region, bird_eye_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
-
-    cv2_poly_points = plot_points(left_points, right_points, pointsy)
-
-    image_set = np.zeros_like(warp_img)
-    
-    filled = cv2.fillPoly(image_set, np.int32([cv2_poly_points]),(10, 255, 0))
-
-    inv_warp = cv2.warpPerspective(filled, inv_warp, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
-
-    inv_warp_large = cv2.copyMakeBorder(inv_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*side_margin),
-                                        int(fr_shape[1]*side_margin), cv2.BORDER_CONSTANT, 0)
-
-    return inv_warp_large, frame, bias, left_curverad, right_curverad
-
     
 class CameraPipeline(object):
 
@@ -481,11 +432,11 @@ class CameraPipeline(object):
         fontColor = (255,255,255)
         lineType = 2
         
-        cv2.putText(background, 'bias (-ve is right drift): {0}m'.format(np.round(bias, 2)), (100,100), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(background, 'bias (-ve is right drift): {0}m'.format(np.round(bias, 2)), (50,50), cv2.FONT_HERSHEY_SIMPLEX,
                          fontScale, fontColor, lineType )
-        cv2.putText(background, 'left curve: {0}m'.format(np.round(left_curve, 2)), (100,200), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(background, 'left curve: {0}m'.format(np.round(left_curve, 2)), (50,75), cv2.FONT_HERSHEY_SIMPLEX,
                          fontScale, fontColor, lineType )
-        cv2.putText(background, 'right curve: {0}m'.format(np.round(right_curve, 2)), (100,300), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(background, 'right curve: {0}m'.format(np.round(right_curve, 2)), (50,100), cv2.FONT_HERSHEY_SIMPLEX,
                          fontScale, fontColor, lineType )
         
 
