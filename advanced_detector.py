@@ -72,7 +72,7 @@ def adv_pipeline(path: str, objpoints: list, imgpoints: list, hfd: int = 0.65) -
     proc_f_lines = hough_lines(roi, 4, np.pi/180, 16, 5, 50)
     if proc_f_lines is not None:
         final_lines = find_lines(proc_f, proc_f_lines)
-        corner_points = find_points_for_transform(final_lines, result)
+        corner_points = find_points_for_transform(final_lines, undist)
 
         output_img = draw_lines(proc_f, final_lines)
         output_img = weighted_img(output_img, undist)
@@ -163,22 +163,30 @@ def find_lane_pixels(binary_warped):
 
     return leftx, lefty, rightx, righty, out_img
 
+def search_around_poly(binary_warped: np.ndarray, left_fit: np.ndarray, 
+    right_fit: np.ndarray, margin: int=100):
 
-def fit_poly(img_shape, leftx, lefty, rightx, righty):
-    """
+    nonzero = binary_warped.nonzero()
+    nonzeroy = np.array(nonzero[0])
+    nonzerox = np.array(nonzero[1])
 
-    """
-    ### TO-DO: Fit a second order polynomial to each with np.polyfit() ###
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    # Generate x and y values for plotting
-    ploty = np.linspace(0, img_shape[0]-1, img_shape[0])
-    ### TO-DO: Calc both polynomials using ploty, left_fit and right_fit ###
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+    left_lane_inds = ((nonzerox > (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + 
+                    left_fit[2] - margin)) & (nonzerox < (left_fit[0]*(nonzeroy**2) + 
+                    left_fit[1]*nonzeroy + left_fit[2] + margin)))
+    right_lane_inds = ((nonzerox > (right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + 
+                    right_fit[2] - margin)) & (nonzerox < (right_fit[0]*(nonzeroy**2) + 
+                    right_fit[1]*nonzeroy + right_fit[2] + margin)))
+    
+    leftx = nonzerox[left_lane_inds]
+    lefty = nonzeroy[left_lane_inds] 
+    rightx = nonzerox[right_lane_inds]
+    righty = nonzeroy[right_lane_inds]
 
+    out_img = np.dstack((binary_warped, binary_warped, binary_warped))
 
-def fit_polynomial(binary_warped: np.ndarray):
+    return leftx, lefty, rightx, righty, out_img
+
+def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: np.ndarray):
     """
 
     binary_warped: a perspective shifted image to run the line detector on
@@ -189,7 +197,11 @@ def fit_polynomial(binary_warped: np.ndarray):
     """
     
     # Find our lane pixels first from the image
-    leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped)
+    # haven't included code that will research if search fails yet
+    if (left_fit is None or right_fit is None):
+        leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped)
+    else:
+        leftx, lefty, rightx, righty, out_img = search_around_poly(binary_warped, left_fit, right_fit)
 
     # Fit a second order polynomial to each using `np.polyfit`
     left_fit = np.polyfit(lefty, leftx, 2)
@@ -217,6 +229,7 @@ def fit_polynomial(binary_warped: np.ndarray):
 
     return left_fit, right_fit, left_fitx, right_fitx, ploty
 
+
 def calc_bias(img, left_fit_pts, right_fit_pts):
     middle = img.shape[1]/2
 
@@ -243,24 +256,21 @@ def plot_points(left_fit_pts, right_fit_pts, ploty):
     return result
 
 
-def abs_sobel_thresh(img, orient='x', thresh_min=0, thresh_max=255):
-    # Convert to grayscale
+def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
+    # Grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    # Apply x or y gradient with the OpenCV Sobel() function
-    # and take the absolute value
-    if orient == 'x':
-        abs_sobel = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
-    if orient == 'y':
-        abs_sobel = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
-    # Rescale back to 8 bit integer
-    scaled_sobel = np.uint8(255*abs_sobel/np.max(abs_sobel))
-    # Create a copy and apply the threshold
-    binary_output = np.zeros_like(scaled_sobel)
-    # Here I'm using inclusive (>=, <=) thresholds, but exclusive is ok too
-    binary_output[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 1
+    # Calculate the x and y gradients
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    # Take the absolute value of the gradient direction, 
+    # apply a threshold, and create a binary image result
+    absgraddir = np.arctan2(np.absolute(sobely), np.absolute(sobelx))
+    binary_output =  np.zeros_like(absgraddir)
+    binary_output[(absgraddir >= thresh[0]) & (absgraddir <= thresh[1])] = 1
 
-    # Return the result
+    # Return the binary image
     return binary_output
+
 
 
 def filter_image(frame):
@@ -285,7 +295,7 @@ def filter_image(frame):
             & (hsv[:,:,1] > thresh_array[0][1]) & (hsv[:,:,1] <= thresh_array[1][1])
             & (hsv[:,:,2] > thresh_array[0][2]) & (hsv[:,:,2] <= thresh_array[1][2])] = 1
     
-    binary_sobel_x = abs_sobel_thresh(frame, orient='x', thresh_min = 20, thresh_max=100)
+    sobel_grad = dir_threshold(frame, sobel_kernel=15, thresh=(0.7, 1.3))
     
     thresh = (215, 255)
     binary = np.zeros_like(R)
@@ -296,7 +306,7 @@ def filter_image(frame):
     binary_2[(S > thresh[0]) & (S <= thresh[1])] = 1
     
     merg = np.zeros_like(S)
-    merg[(binary == 1) | (binary_2 == 1) | (binary_v == 1 ) | (binary_sobel_x == 1 ) ]=1
+    merg[(binary == 1) | (binary_2 == 1)]=1 #| (binary_v == 1 ) & (sobel_grad == 1 ) ]=1
 
     return merg 
 
@@ -360,7 +370,7 @@ class CameraPipeline(object):
         output = adv_pipeline(img, self.objpoints, self.imgpoints)
         return output
 
-    def _run_pipeline(self, frame: np.ndarray, crop_margin: float, transform: list, inv_transform: list ):
+    def _run_pipeline(self, frame: np.ndarray, crop_margin: float, transform: list, inv_transform: list, is_video: int):
 
         fr_shape = frame.shape
 
@@ -375,10 +385,24 @@ class CameraPipeline(object):
         warped_shape = car_forward_region.shape 
         warped = cv2.warpPerspective(car_forward_region, transform, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
         
+        if is_video == 0:
+            self.left_lane = None
+            self.right_lane = None
+
         # returns the polynomial fit
-        left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped)
+        left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped, self.left_lane, self.right_lane)
+        
+        if is_video == 1:
+            self.left_lane = left_ft
+            self.right_lane = right_ft
+        
         
         left_curverad, right_curverad = measure_curvature_pixels(warped, left_ft, right_ft)
+
+        # drop the prior search if the curves go haywire
+        if np.abs(left_curverad - right_curverad) > 1500:
+            self.left_lane = None
+            self.right_lane = None
 
         bias = calc_bias(warped, left_points, right_points)
         
@@ -401,16 +425,17 @@ class CameraPipeline(object):
 
         return inv_warp_large, frame, bias, left_curverad, right_curverad
 
-    def _run_video_pipeline(self, fil_path: str, crop_margin: float, transform: list, inv_transform: list ):
+    def _run_video_pipeline(self, fil_path: str, crop_margin: float, transform: list, 
+        inv_transform: list, is_video):
 
         frame, fr_shape = read_video(fil_path)
 
-        inv_warp_large, frame, bias, left_curverad, right_curverad = self._run_pipeline(frame, crop_margin, transform, inv_transform)
+        inv_warp_large, frame, bias, left_curverad, right_curverad = self._run_pipeline(frame, crop_margin, transform, inv_transform, is_video)
 
         return inv_warp_large, frame, bias, left_curverad, right_curverad
 
 
-    def process(self, img):
+    def process(self, img, is_video=1):
 
         """
 
@@ -422,9 +447,9 @@ class CameraPipeline(object):
         """
 
         if type(img) is str:
-            output, background, bias, left_curve, right_curve = self._run_video_pipeline(img, self.crop_image_margin, self.M, self.Minv)
+            output, background, bias, left_curve, right_curve = self._run_video_pipeline(img, self.crop_image_margin, self.M, self.Minv, is_video=1)
         elif type(img) is np.ndarray:
-            output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.crop_image_margin, self.M, self.Minv)
+            output, background, bias, left_curve, right_curve = self._run_pipeline(img, self.crop_image_margin, self.M, self.Minv, is_video=1)
             
 
 
