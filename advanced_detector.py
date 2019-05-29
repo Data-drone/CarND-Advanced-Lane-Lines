@@ -205,49 +205,6 @@ def search_around_poly(binary_warped: np.ndarray, left_fit: list,
 
     return leftx, lefty, rightx, righty, out_img
 
-def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: np.ndarray):
-    """
-
-    binary_warped: a perspective shifted image to run the line detector on
-
-    reads in the image and works out the left and right lines
-
-    returns left_fit and right_fit lines and the fitted coordinates
-    can return None for a fit if the input is none and lane pixels can't be found
-
-    """
-    
-    # Find our lane pixels first from the image
-    # haven't included code that will research if search fails yet
-    if (left_fit is None or right_fit is None):
-        leftx, lefty, rightx, righty, out_img = find_lane_pixels(binary_warped)
-    else:
-        leftx, lefty, rightx, righty, out_img = search_around_poly(binary_warped, left_fit, right_fit)
-
-    # Fit a second order polynomial to each using `np.polyfit`
-    if leftx.size > 0:
-        left_fi = np.polyfit(lefty, leftx, 2)
-    else:
-        left_fi = left_fit
-    
-    if rightx.size > 0:
-        right_fi = np.polyfit(righty, rightx, 2)        
-    else:
-        right_fi = right_fit
-    
-    # Generate x and y values for plotting
-    ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
-    try:
-        left_fitx = left_fi[0]*ploty**2 + left_fi[1]*ploty + left_fi[2]
-        right_fitx = right_fi[0]*ploty**2 + right_fi[1]*ploty + right_fi[2]
-    except TypeError:
-        # Avoids an error if `left` and `right_fit` are still none or incorrect
-        print('The function failed to fit a line!')
-        left_fitx = 1*ploty**2 + 1*ploty
-        right_fitx = 1*ploty**2 + 1*ploty
-
-    return left_fi, right_fi, left_fitx, right_fitx, ploty
-
 
 def calc_bias(img: np.ndarray, left_fit_pts: list, right_fit_pts: list) -> float:
 
@@ -307,6 +264,12 @@ def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)) -> np.ndarray:
 
 def color_filter(image: np.ndarray, lower: np.ndarray, upper: np.ndarray, colourspace = None) -> np.ndarray:
 
+    """
+
+    filter function to apply a threshold onto an image
+
+    """
+
     if colourspace is not None:
         col_image = cv2.cvtColor(image, colourspace)
     else:
@@ -316,6 +279,11 @@ def color_filter(image: np.ndarray, lower: np.ndarray, upper: np.ndarray, colour
     return binary
 
 def filter_image(frame: np.ndarray) -> np.ndarray:
+    """
+
+    final filter uses a white line filter and a yellow line filter
+
+    """
 
     White_filter = color_filter(image = frame, lower = np.array([202,202,202]), upper = np.array([255,255,255]) )
     Yellow_filter = color_filter(image = frame, lower = np.array([200,120,0]), upper = np.array([255,255, 100]) )
@@ -328,7 +296,7 @@ def filter_image(frame: np.ndarray) -> np.ndarray:
 
     return merged_binary
 
-def measure_line_curature(warped_img: np.array, line_fit: np.ndarray):
+def measure_line_curvature(warped_img: np.array, line_fit: np.ndarray):
 
     """
 
@@ -355,41 +323,6 @@ def measure_line_curature(warped_img: np.array, line_fit: np.ndarray):
     curve_rad = ((1 + (2*line_fit_sc[0]*y_eval + line_fit_sc[1])**2)**1.5) / np.absolute(2*line_fit_sc[0])
     
     return curve_rad
-    
-    
-
-def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_fit: np.ndarray):
-    """
-
-    measures the curvature of the road
-    takes in a warped image and the left and right fits
-
-    """
-
-    assert left_fit is not None
-    assert right_fit is not None
-
-    y_coords = np.linspace(0, warped_img.shape[0]-1, warped_img.shape[0])
-    left_x_coords = left_fit[0]*y_coords**2 + left_fit[1]*y_coords + left_fit[2]
-    right_x_coords = right_fit[0]*y_coords**2 + right_fit[1]*y_coords + right_fit[2]
-
-    # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 10/300 #30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/800 # meters per pixel in x dimension
-    
-    y_eval = np.max(y_coords)
-
-    rescaled_y = y_coords*ym_per_pix
-    rescaled_x_left = left_x_coords*xm_per_pix
-    rescaled_x_right = right_x_coords*xm_per_pix
-     
-    left_fit_sc = np.polyfit(rescaled_y, rescaled_x_left, 2)
-    right_fit_sc = np.polyfit(rescaled_y, rescaled_x_right, 2)
-
-    left_curverad = ((1 + (2*left_fit_sc[0]*y_eval + left_fit_sc[1])**2)**1.5) / np.absolute(2*left_fit_sc[0])
-    right_curverad = ((1 + (2*right_fit_sc[0]*y_eval + right_fit_sc[1])**2)**1.5) / np.absolute(2*right_fit_sc[0])
-    
-    return left_curverad, right_curverad
 
 
 # Define a class to receive the characteristics of each line detection
@@ -404,7 +337,7 @@ class Line():
         # just holds a y value to match best x
         self.besty = None
         #polynomial coefficients averaged over the last n iterations
-        self.best_fit = None  
+        self.best_fit = [np.array([False])]    
         #polynomial coefficients for the most recent fit
         self.current_fit = [np.array([False])]  
         #radius of curvature of the line in some units
@@ -431,13 +364,18 @@ class Line():
         # no current fit
         if self.current_fit[0].size == 1:
             pass
+        elif self.radius_of_curvature > 2500:
+            pass
         
         else:
+            if self.best_fit[0].size > 1:
+                self.diffs = self.current_fit[0] - self.best_fit[0]
+                #print(self.diffs)
+
             self.best_fit = self.current_fit
             self.bestx = self.allx[-1]
             self.besty = self.ally[-1]
 
-            # untested
             self.detected = True
 
 
@@ -460,7 +398,9 @@ class Line():
             line_fit = np.polyfit(y,x,2)
             if len(line_fit) > 0:
                 self.current_fit = [line_fit]
-                self.radius_of_curvature = measure_line_curature(warped, line_fit)
+                self.radius_of_curvature = measure_line_curvature(warped, line_fit)
+
+                
         
         else:
             self.current_fit = [np.array([False])]  
@@ -545,48 +485,13 @@ class CameraPipeline(object):
         left_fit_pts = self.left_line.best_fit[0][0]*ploty**2 + self.left_line.best_fit[0][1]*ploty + self.left_line.best_fit[0][2]
         right_fit_pts = self.right_line.best_fit[0][0]*ploty**2 + self.right_line.best_fit[0][1]*ploty + self.right_line.best_fit[0][2]
 
+        self.left_line.recent_xfitted.append(left_fit_pts)
+        self.right_line.recent_xfitted.append(right_fit_pts)
 
-        """
-        # make sure we always calculate if not in video mode
-        if is_video == 0:
-            self.left_lane = None
-            self.right_lane = None
-
-        # returns the polynomial fit - can return zero if it can't find anything
-        left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped, self.left_lane, self.right_lane)
-        
-        if is_video == 1:
-            if left_ft is not None:
-                self.left_lane = left_ft
-            if right_ft is not None:
-                self.right_lane = right_ft
-            if left_points is not None:
-                self.left_x = left_points
-                self.left_y = pointsy
-            if right_points is not None:    
-                self.right_x = right_points
-                self.right_y = pointsy
-        
-        # calculates lane curvature
-        left_curverad, right_curverad = measure_curvature_pixels(warped, self.left_lane, self.right_lane)
-
-        # drop the prior search if the curves go haywire
-        if np.abs(left_curverad - right_curverad) > 1500:
-            self.left_lane = None
-            self.right_lane = None
-
-        """
 
         bias = calc_bias(warped, left_fit_pts, right_fit_pts)
-        
-        # outputs:
-        # 
-        
 
         # plot the lines and section on warped colour section
-        # inputs are: initial frame
-        # crop margin
-        # left_points, right_points
         # 
         img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
                                         int(fr_shape[1]*crop_margin):int(fr_shape[1]*(1-crop_margin)) ] 
