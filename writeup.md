@@ -90,16 +90,19 @@ PostWarp Image
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-To identify the lines, I fit a polynormal to the line pixels identified. This process is defined in the `find_lane_pixels function` in `advanced_detector.py` file. The lane pixel identifier uses 9 sliding windows looks for non-zero pixels within each window. 
 
-A second degree polynomial is fitted to the identified pixels via the `fit_polynomial` function in `advanced_detector.py` 
+To identify the lines, I fit a polynormal to the line pixels identified. This process is defined in the `find_lane_pixels` in `advanced_detector.py` file. The lane pixel identifier uses 9 sliding windows looks for non-zero pixels within each window.
+
+A second degree polynomial is fitted to the identified pixels via the `fit_polynomial` function in `advanced_detector.py`. For video scenarios, where there can be priors, there is a check at `line 472` that determines whether the `find_lane_pixels` function is used or the `search_around_poly` function which just runs a search around the location of the line identified in the previous frame.
 
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-The radius of curvature is calculated in the `measure_curvature_pixels` function in the `advanced_detector.py`. It uses the functions as explained in Measuring Curvature I video.
+The radius of curvature is calculated in the `measure_line_curvature` function in the `advanced_detector.py`. It uses the functions as explained in Measuring Curvature I video.
 
 The position of the vehicle with respect to the center, the bias, is calculated in the `calc_bias` function. This is calculated by looking at the distance of the left line from the middle of the image, the distance from the right line and hence working out the offset.
+
+The factors for converting pixels to meters is based on analysing the postwarp image which suggested that for my case, the lane is about 800 pixels width and the look ahead region is roughly three road line dashes or 10 meters ahead.
 
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
@@ -120,8 +123,11 @@ Here's a [link to my video result](./project_processed_video.mp4)
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Currently, the pipeline recalculates the line fitting with each frame and doesn't take into account previous frame data to make this more efficient and less noisy but it seems to work good enough for now.
+Sense checking lines is a bit of a trial and error scenario with the limits say on road curvature hard coded. it would make sense for this to be more dynamic to handle a wider variety of cases. At the moment, the pipeline reverts to previous fit if it cannot find a good new fit. There is currently no mechanism to retire the previous fit if it gets too old, adding this kind of functionality will help to make the algorithm more robust.
 
 In the advanced video, there are scenes where one line is missing. Ideally the algorithm should have a concept of how far road lines are apart and be able to through a combination of using prior knowledge and knowing rough lane widths be able to work out where the other line would be should only one line appear in the video.
+
+In cases where there are no painted road lines and road edges are where pedestrian pavement or wild bushland starts, the road line filters are likely to fail and hence a lane will not be detected. Addressing this will require new filter logic, perhaps leveraging edge detectors rather than just the colour detectors currently used.
+
 
 The perspective transform has been hardcoded rather than being dynamic so in areas when the perspective changes due to undulating curves in the road, the warp won't result in a good candidate for lane detection.
