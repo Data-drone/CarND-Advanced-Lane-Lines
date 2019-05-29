@@ -31,7 +31,7 @@ def genpoints(image_list: list, nx: int = 9, ny: int = 6) -> Tuple[list, list]:
     return objpoints, imgpoints
 
 # undistort and transform - need mtx and dist from camera calibration
-def undistort_img(img: np.ndarray, objpoints: list, imgpoints: list):
+def undistort_img(img: np.ndarray, objpoints: list, imgpoints: list) -> np.ndarray:
     """
     undistorts images based on object points
 
@@ -42,7 +42,11 @@ def undistort_img(img: np.ndarray, objpoints: list, imgpoints: list):
     return dst
 
 # HSV color thresholder
-def hls_select(img, thresh=(0, 255)):
+def hls_select(img: np.ndarray, thresh: tuple=(0, 255)) -> np.ndarray:
+    """
+    receives an image as a numpy array applies a threshold on the s channel and outputs thresholded image
+
+    """
     
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     # Choose S channel
@@ -82,7 +86,13 @@ def adv_pipeline(path: str, objpoints: list, imgpoints: list, hfd: int = 0.65) -
     #yield output_img
     return output_img, corner_points
 
-def find_lane_pixels(binary_warped):
+def find_lane_pixels(binary_warped: np.ndarray)  -> Tuple[list, list, list, list, np.ndarray]:
+    """
+
+    applies the histrogram and sliding window method to find line pixels
+    will return nones if cannot find
+
+    """
     # Take a histogram of the bottom half of the image
     histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
     # Create an output image to draw on and visualize the result
@@ -163,8 +173,17 @@ def find_lane_pixels(binary_warped):
 
     return leftx, lefty, rightx, righty, out_img
 
-def search_around_poly(binary_warped: np.ndarray, left_fit: np.ndarray, 
-    right_fit: np.ndarray, margin: int=100):
+def search_around_poly(binary_warped: np.ndarray, left_fit: list, 
+    right_fit: list, margin: int=100) -> Tuple[list, list, list, list, np.ndarray]:
+
+    """
+
+    searches around a previous fit to find lane pixels
+
+    """
+    left_fit = left_fit[0]
+    right_fit = right_fit[0]
+    
 
     nonzero = binary_warped.nonzero()
     nonzeroy = np.array(nonzero[0])
@@ -194,6 +213,8 @@ def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: n
     reads in the image and works out the left and right lines
 
     returns left_fit and right_fit lines and the fitted coordinates
+    can return None for a fit if the input is none and lane pixels can't be found
+
     """
     
     # Find our lane pixels first from the image
@@ -203,15 +224,16 @@ def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: n
     else:
         leftx, lefty, rightx, righty, out_img = search_around_poly(binary_warped, left_fit, right_fit)
 
-    # empty result can be an issue due to filtering hence the try except
     # Fit a second order polynomial to each using `np.polyfit`
+    if leftx.size > 0:
+        left_fi = np.polyfit(lefty, leftx, 2)
+    else:
+        left_fi = left_fit
     
-    left_fi = np.polyfit(lefty, leftx, 2)
-    right_fi = np.polyfit(righty, rightx, 2)
-
-    assert left_fi is not None
-    assert right_fi is not None
-    
+    if rightx.size > 0:
+        right_fi = np.polyfit(righty, rightx, 2)        
+    else:
+        right_fi = right_fit
     
     # Generate x and y values for plotting
     ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
@@ -224,28 +246,27 @@ def fit_polynomial(binary_warped: np.ndarray, left_fit: np.ndarray, right_fit: n
         left_fitx = 1*ploty**2 + 1*ploty
         right_fitx = 1*ploty**2 + 1*ploty
 
-    ## Visualization ##
-    # Colors in the left and right lane regions
-    out_img[lefty, leftx] = [255, 0, 0]
-    out_img[righty, rightx] = [0, 0, 255]
-
-    # Plots the left and right polynomials on the lane lines
-    #plt.plot(left_fitx, ploty, color='yellow')
-    #plt.plot(right_fitx, ploty, color='yellow')
-
     return left_fi, right_fi, left_fitx, right_fitx, ploty
 
 
-def calc_bias(img, left_fit_pts, right_fit_pts):
+def calc_bias(img: np.ndarray, left_fit_pts: list, right_fit_pts: list) -> float:
+
+    """
+
+    calculates the bias, drift from center of the lane
+
+    """
+    
     middle = img.shape[1]/2
 
-    lane_middle = (right_fit_pts - left_fit_pts)/2 + left_fit_pts
+    lane_middle = (right_fit_pts[-1] - left_fit_pts[-1])/2 + left_fit_pts[-1]
     unscaled_bias = lane_middle - middle
-    bias = ((unscaled_bias)*(3.7/700))[0]
+
+    bias = ((unscaled_bias)*(3.7/800))
 
     return bias
 
-def plot_points(left_fit_pts, right_fit_pts, ploty):
+def plot_points(left_fit_pts: list, right_fit_pts: list, ploty: list) -> list:
     """
     orders the points to plotPoly
     """
@@ -262,7 +283,13 @@ def plot_points(left_fit_pts, right_fit_pts, ploty):
     return result
 
 
-def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)):
+def dir_threshold(img, sobel_kernel=3, thresh=(0, np.pi/2)) -> np.ndarray:
+    """
+    
+    directional threasholding function using sobel filters
+    outputs a mask
+
+    """
     # Grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     # Calculate the x and y gradients
@@ -301,6 +328,35 @@ def filter_image(frame: np.ndarray) -> np.ndarray:
 
     return merged_binary
 
+def measure_line_curature(warped_img: np.array, line_fit: np.ndarray):
+
+    """
+
+    measures curvature of one single line
+
+    """
+
+    assert line_fit is not None
+
+    y_coords = np.linspace(0, warped_img.shape[0]-1, warped_img.shape[0])
+    x_coords = line_fit[0]*y_coords**2 + line_fit[1]*y_coords + line_fit[2]
+
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 10/300 #30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/800 # meters per pixel in x dimension
+    
+    y_eval = np.max(y_coords)
+
+    rescaled_y = y_coords*ym_per_pix
+    rescaled_x = x_coords*xm_per_pix
+
+    line_fit_sc = np.polyfit(rescaled_y, rescaled_x, 2)
+
+    curve_rad = ((1 + (2*line_fit_sc[0]*y_eval + line_fit_sc[1])**2)**1.5) / np.absolute(2*line_fit_sc[0])
+    
+    return curve_rad
+    
+    
 
 def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_fit: np.ndarray):
     """
@@ -318,8 +374,8 @@ def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_f
     right_x_coords = right_fit[0]*y_coords**2 + right_fit[1]*y_coords + right_fit[2]
 
     # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+    ym_per_pix = 10/300 #30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/800 # meters per pixel in x dimension
     
     y_eval = np.max(y_coords)
 
@@ -334,6 +390,85 @@ def measure_curvature_pixels(warped_img: np.array, left_fit: np.ndarray, right_f
     right_curverad = ((1 + (2*right_fit_sc[0]*y_eval + right_fit_sc[1])**2)**1.5) / np.absolute(2*right_fit_sc[0])
     
     return left_curverad, right_curverad
+
+
+# Define a class to receive the characteristics of each line detection
+class Line():
+    def __init__(self):
+        # was the line detected in the last iteration?
+        self.detected = False  
+        # x values of the last n fits of the line
+        self.recent_xfitted = [] 
+        #average x values of the fitted line over the last n iterations
+        self.bestx = None     
+        # just holds a y value to match best x
+        self.besty = None
+        #polynomial coefficients averaged over the last n iterations
+        self.best_fit = None  
+        #polynomial coefficients for the most recent fit
+        self.current_fit = [np.array([False])]  
+        #radius of curvature of the line in some units
+        self.radius_of_curvature = None 
+        #distance in meters of vehicle center from the line
+        self.line_base_pos = None 
+        #difference in fit coefficients between last and new fits
+        self.diffs = np.array([0,0,0], dtype='float') 
+        #x values for detected line pixels
+        self.allx = []  
+        #y values for detected line pixels
+        self.ally = []
+
+    def check_fit(self):
+        """
+
+        function that checks the fit to make sure we return something sensical
+        we need to return a:
+
+            bestx / besty / radius_of_curvature needed att the end
+
+        """
+
+        # no current fit
+        if self.current_fit[0].size == 1:
+            pass
+        
+        else:
+            self.best_fit = self.current_fit
+            self.bestx = self.allx[-1]
+            self.besty = self.ally[-1]
+
+            # untested
+            self.detected = True
+
+
+    def add_fit(self, x: list, y: list, warped: np.ndarray):
+        """
+
+        take a set of x and y from fits
+        check that there are values
+        add it to all x and all y
+        run a current fit
+        
+        
+
+        """  
+
+        if (len(x) > 0) and (len(y) > 0):
+            self.allx.append(x)
+            self.ally.append(y)
+
+            line_fit = np.polyfit(y,x,2)
+            if len(line_fit) > 0:
+                self.current_fit = [line_fit]
+                self.radius_of_curvature = measure_line_curature(warped, line_fit)
+        
+        else:
+            self.current_fit = [np.array([False])]  
+        
+        self.check_fit()
+
+            
+
 
     
 class CameraPipeline(object):
@@ -354,13 +489,21 @@ class CameraPipeline(object):
 
         self.crop_image_margin = 0.05
 
-        self.left_lane = None
-        self.right_lane = None
+        self.left_line = Line()
+        self.right_line = Line()
+        
 
     def calibrate_cam(self, cal_images: str):
+        """
+
+        calibrates for camera distortion based on checkerboard samples
+
+        """
         self.objpoints, self.imgpoints = genpoints(cal_images, self.nx, self.ny)
 
+
     def calc_polygon(self, img: str):
+
         output = adv_pipeline(img, self.objpoints, self.imgpoints)
         return output
 
@@ -377,36 +520,80 @@ class CameraPipeline(object):
                                         int(fr_shape[1]*crop_margin):int(fr_shape[1]*(1-crop_margin)) ]
 
         warped_shape = car_forward_region.shape 
+
+        # warps the image to get the birds eye view
         warped = cv2.warpPerspective(car_forward_region, transform, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
         
+        """
+        look at both lines, is the detected flag set
+        if no then run the fit
+        """
+
+        if (self.left_line.detected == False) or (self.right_line.detected == False):
+            leftx, lefty, rightx, righty, out_img = find_lane_pixels(warped)
+        else:
+            leftx, lefty, rightx, righty, out_img = search_around_poly(warped, 
+                                                                        self.left_line.best_fit,
+                                                                        self.right_line.best_fit)
+            
+        self.left_line.add_fit(leftx, lefty, warped)
+        self.right_line.add_fit(rightx, righty, warped)            
+
+        # use the best fit from each to create x and y for plots
+
+        ploty = np.linspace(0, warped.shape[0]-1, warped.shape[0] )
+        left_fit_pts = self.left_line.best_fit[0][0]*ploty**2 + self.left_line.best_fit[0][1]*ploty + self.left_line.best_fit[0][2]
+        right_fit_pts = self.right_line.best_fit[0][0]*ploty**2 + self.right_line.best_fit[0][1]*ploty + self.right_line.best_fit[0][2]
+
+
+        """
+        # make sure we always calculate if not in video mode
         if is_video == 0:
             self.left_lane = None
             self.right_lane = None
 
-        # returns the polynomial fit
+        # returns the polynomial fit - can return zero if it can't find anything
         left_ft, right_ft, left_points, right_points, pointsy = fit_polynomial(warped, self.left_lane, self.right_lane)
         
         if is_video == 1:
-            self.left_lane = left_ft
-            self.right_lane = right_ft
+            if left_ft is not None:
+                self.left_lane = left_ft
+            if right_ft is not None:
+                self.right_lane = right_ft
+            if left_points is not None:
+                self.left_x = left_points
+                self.left_y = pointsy
+            if right_points is not None:    
+                self.right_x = right_points
+                self.right_y = pointsy
         
-        
-        left_curverad, right_curverad = measure_curvature_pixels(warped, left_ft, right_ft)
+        # calculates lane curvature
+        left_curverad, right_curverad = measure_curvature_pixels(warped, self.left_lane, self.right_lane)
 
         # drop the prior search if the curves go haywire
         if np.abs(left_curverad - right_curverad) > 1500:
             self.left_lane = None
             self.right_lane = None
 
-        bias = calc_bias(warped, left_points, right_points)
+        """
+
+        bias = calc_bias(warped, left_fit_pts, right_fit_pts)
         
+        # outputs:
+        # 
+        
+
         # plot the lines and section on warped colour section
+        # inputs are: initial frame
+        # crop margin
+        # left_points, right_points
+        # 
         img_forward_region = frame[int(fr_shape[0]/2):fr_shape[0],
                                         int(fr_shape[1]*crop_margin):int(fr_shape[1]*(1-crop_margin)) ] 
         
         warp_img = cv2.warpPerspective(img_forward_region, transform, (warped_shape[1], warped_shape[0]), flags=cv2.INTER_LINEAR)
 
-        cv2_poly_points = plot_points(left_points, right_points, pointsy)
+        cv2_poly_points = plot_points(left_fit_pts, right_fit_pts, ploty)
 
         image_set = np.zeros_like(warp_img)
         
@@ -417,10 +604,15 @@ class CameraPipeline(object):
         inv_warp_large = cv2.copyMakeBorder(un_warp, int(fr_shape[0]/2), 0, int(fr_shape[1]*crop_margin),
                                             int(fr_shape[1]*crop_margin), cv2.BORDER_CONSTANT, 0)
 
-        return inv_warp_large, frame, bias, left_curverad, right_curverad
+        return inv_warp_large, frame, bias, self.left_line.radius_of_curvature, self.right_line.radius_of_curvature
 
     def _run_video_pipeline(self, fil_path: str, crop_margin: float, transform: list, 
         inv_transform: list, is_video):
+        """
+
+        uses the cv2 based read_video function instead to open videos 
+
+        """
 
         frame, fr_shape = read_video(fil_path)
 
